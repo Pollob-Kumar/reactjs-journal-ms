@@ -1,0 +1,38 @@
+.confirm-dialog {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.confirm-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.confirm-warning .confirm-icon {
+  color: var(--warning-color);
+}
+
+.confirm-danger .confirm-icon {
+  color: var(--danger-color);
+}
+
+.confirm-info .confirm-icon {
+  color: var(--info-color);
+}
+
+.confirm-message {
+  font-size: 16px;
+  color: var(--dark-text);
+  margin-bottom: 30px;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.confirm-actions .btn {
+  min-width: 100px;
+}
