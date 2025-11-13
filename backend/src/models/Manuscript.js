@@ -58,6 +58,9 @@ const fileSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+// backend/src/models/Manuscript.js
+// Update the revisionSchema
+
 const revisionSchema = new mongoose.Schema({
   version: {
     type: Number,
@@ -67,6 +70,10 @@ const revisionSchema = new mongoose.Schema({
   responseToReviewers: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'uploads.files'
+  },
+  revisionNotes: {
+    type: String,
+    maxlength: [2000, 'Revision notes cannot exceed 2000 characters']
   },
   submittedAt: {
     type: Date,
