@@ -55,6 +55,7 @@ import Archives from './pages/public/Archives';
 import ArticleView from './pages/public/ArticleView';
 import About from './pages/public/About';
 import DoiDeposits from './components/common/pages/admin/DoiDeposits';
+import ArticleView from './components/common/pages/public/ArticleView';
 
 // Profile
 import Profile from './pages/Profile';
@@ -90,6 +91,9 @@ function App() {
                 <Route path="/archives" element={<Archives />} />
                 <Route path="/article/:manuscriptId" element={<ArticleView />} />
                 <Route path="/about" element={<About />} />
+                  // In the public routes section:
+                <Route path="/articles/:articleId" element={<ArticleView />} />
+                <Route path="/articles/doi/:doi" element={<ArticleView />} /> {/* Add DOI route */}
               </Route>
 
               {/* Auth Routes */}
