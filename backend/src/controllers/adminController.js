@@ -309,3 +309,213 @@ exports.deleteManuscriptAdmin = async (req, res, next) => {
     next(error);
   }
 };
+
+// backend/src/controllers/adminController.js - Add these methods
+
+// @desc    Get manuscript revision history
+// @route   GET /api/admin/manuscripts/:id/revisions
+// @access  Private (Admin)
+exports.getManuscriptRevisions = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findById(req.params.id)
+      .populate('submittedBy', 'firstName lastName email')
+      .populate('revisions.submittedBy', 'firstName lastName email')
+      .populate('assignedEditor', 'firstName lastName email');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    // Build comprehensive revision history
+    const revisionHistory = [
+      {
+        version: 1,
+        submittedAt: manuscript.submissionDate,
+        submittedBy: manuscript.submittedBy,
+        files: manuscript.files,
+        status: 'Initial Submission',
+        isInitial: true
+      },
+      ...manuscript.revisions.map(revision => ({
+        version: revision.version,
+        submittedAt: revision.submittedAt,
+        submittedBy: revision.submittedBy,
+        files: revision.files,
+        responseToReviewers: revision.responseToReviewers,
+        status: 'Revision',
+        isInitial: false
+      }))
+    ];
+
+    res.status(200).json({
+      success: true,
+      data: {
+        manuscriptId: manuscript.manuscriptId,
+        title: manuscript.title,
+        currentVersion: manuscript.currentVersion,
+        revisionHistory,
+        timeline: manuscript.timeline
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get specific revision files
+// @route   GET /api/admin/manuscripts/:id/revisions/:version
+// @access  Private (Admin)
+exports.getRevisionDetails = async (req, res, next) => {
+  try {
+    const { id, version } = req.params;
+    const manuscript = await Manuscript.findById(id)
+      .populate('submittedBy', 'firstName lastName email affiliation')
+      .populate('revisions.submittedBy', 'firstName lastName email');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    let revisionData;
+    const versionNum = parseInt(version);
+
+    if (versionNum === 1) {
+      // Initial submission
+      revisionData = {
+        version: 1,
+        submittedAt: manuscript.submissionDate,
+        submittedBy: manuscript.submittedBy,
+        files: manuscript.files,
+        title: manuscript.title,
+        abstract: manuscript.abstract,
+        keywords: manuscript.keywords,
+        authors: manuscript.authors,
+        isInitial: true
+      };
+    } else {
+      // Find specific revision
+      const revision = manuscript.revisions.find(r => r.version === versionNum);
+      if (!revision) {
+        return res.status(404).json({
+          success: false,
+          message: 'Revision not found'
+        });
+      }
+
+      revisionData = {
+        version: revision.version,
+        submittedAt: revision.submittedAt,
+        submittedBy: revision.submittedBy,
+        files: revision.files,
+        responseToReviewers: revision.responseToReviewers,
+        isInitial: false
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      data: revisionData
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Compare two revisions
+// @route   GET /api/admin/manuscripts/:id/revisions/compare/:version1/:version2
+// @access  Private (Admin)
+exports.compareRevisions = async (req, res, next) => {
+  try {
+    const { id, version1, version2 } = req.params;
+    const manuscript = await Manuscript.findById(id)
+      .populate('submittedBy', 'firstName lastName email')
+      .populate('revisions.submittedBy', 'firstName lastName email');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    const v1 = parseInt(version1);
+    const v2 = parseInt(version2);
+
+    // Get revision data
+    const getRevisionData = (versionNum) => {
+      if (versionNum === 1) {
+        return {
+          version: 1,
+          submittedAt: manuscript.submissionDate,
+          submittedBy: manuscript.submittedBy,
+          files: manuscript.files
+        };
+      }
+      return manuscript.revisions.find(r => r.version === versionNum);
+    };
+
+    const revision1 = getRevisionData(v1);
+    const revision2 = getRevisionData(v2);
+
+    if (!revision1 || !revision2) {
+      return res.status(404).json({
+        success: false,
+        message: 'One or both revisions not found'
+      });
+    }
+
+    // Compare files
+    const filesAdded = revision2.files.filter(
+      f2 => !revision1.files.some(f1 => f1.originalName === f2.originalName)
+    );
+
+    const filesRemoved = revision1.files.filter(
+      f1 => !revision2.files.some(f2 => f2.originalName === f1.originalName)
+    );
+
+    const filesModified = revision2.files.filter(f2 => {
+      const f1 = revision1.files.find(f => f.originalName === f2.originalName);
+      return f1 && (f1.size !== f2.size || f1.uploadDate !== f2.uploadDate);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        manuscriptId: manuscript.manuscriptId,
+        title: manuscript.title,
+        comparison: {
+          version1: {
+            version: revision1.version,
+            submittedAt: revision1.submittedAt || revision1.submissionDate,
+            submittedBy: revision1.submittedBy,
+            fileCount: revision1.files.length
+          },
+          version2: {
+            version: revision2.version,
+            submittedAt: revision2.submittedAt,
+            submittedBy: revision2.submittedBy,
+            fileCount: revision2.files.length
+          },
+          changes: {
+            filesAdded,
+            filesRemoved,
+            filesModified,
+            summary: {
+              added: filesAdded.length,
+              removed: filesRemoved.length,
+              modified: filesModified.length
+            }
+          }
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
