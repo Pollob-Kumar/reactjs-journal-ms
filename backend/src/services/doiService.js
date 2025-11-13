@@ -71,3 +71,64 @@ module.exports = {
   resolveDOI,
   updateDOIMetadata
 };
+
+
+
+
+
+/*
+It **uses Mock DOI** implementation, not real CrossRef integration.
+
+Here's what's happening:
+
+## Current DOI Implementation (Mock)
+
+
+## What This Means:
+
+✅ **Mock DOI Features Implemented:**
+- Generates fake DOIs in the format `10.12345/pujms.2025.xyz123`
+- Simulates the DOI assignment workflow
+- Tracks deposit status (pending, processing, success, failed)
+- Records deposit history
+- Provides retry mechanisms
+- Admin UI for monitoring and retrying
+
+❌ **Real CrossRef NOT Implemented:**
+- No actual API calls to CrossRef
+- No real DOI registration with CrossRef servers
+- No validation against CrossRef schema
+- DOIs are not resolvable through https://doi.org/
+
+## Why Mock Implementation?
+
+As you requested in your original requirement:
+> "**FR-6: stick to mock DOI implementation**"
+
+The implementation fully supports the **infrastructure** for DOI management (tracking, retrying, admin UI, stable URLs), but the actual CrossRef API integration is commented out and ready to be activated later.
+
+## To Switch to Real CrossRef Later:
+
+You would need to:
+
+1. **Get CrossRef credentials** (DOI prefix, API key)
+2. **Uncomment the API call** in `doiService.js`
+3. **Add environment variables**:
+   ```env
+   CROSSREF_API_URL=https://api.crossref.org
+   CROSSREF_API_KEY=your-real-key
+   DOI_PREFIX=10.xxxxx  # Your assigned prefix
+   ```
+4. **Implement CrossRef metadata mapping** (their XML/JSON schema)
+5. **Test in CrossRef sandbox first**
+
+The current implementation gives you all the **operational infrastructure** (admin UI, retry logic, status tracking, stable URLs) while using mock DOIs that look real but aren't registered.
+
+---
+
+**Would you like me to:**
+1. Keep it as is (mock DOI)?
+2. Provide the real CrossRef integration code now?
+3. Document the migration path from mock to real CrossRef?
+
+*/
