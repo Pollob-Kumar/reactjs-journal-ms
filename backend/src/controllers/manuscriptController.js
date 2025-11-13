@@ -578,3 +578,108 @@ exports.getStatistics = async (req, res, next) => {
     next(error);
   }
 };
+
+// backend/src/controllers/manuscriptController.js
+// Update the submitRevision method to handle revision notes
+
+exports.submitRevision = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findById(req.params.id);
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    // Check if user is the author
+    if (manuscript.submittedBy.toString() !== req.user.id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to revise this manuscript'
+      });
+    }
+
+    // Check if revision is required
+    if (manuscript.status !== MANUSCRIPT_STATUS.REVISIONS_REQUIRED) {
+      return res.status(400).json({
+        success: false,
+        message: 'This manuscript does not require revisions'
+      });
+    }
+
+    // Validate file uploads
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload revised manuscript files'
+      });
+    }
+
+    // Process uploaded files
+    const files = req.files.map(file => ({
+      fileId: file.id,
+      filename: file.filename,
+      originalName: file.originalname,
+      fileType: file.metadata.fileType,
+      size: file.size,
+      uploadDate: file.uploadDate
+    }));
+
+    // Create new revision
+    const newVersion = manuscript.currentVersion + 1;
+    manuscript.revisions.push({
+      version: newVersion,
+      files,
+      responseToReviewers: req.body.responseFileId || null,
+      submittedBy: req.user.id,
+      revisionNotes: req.body.revisionNotes || '' // Add revision notes
+    });
+
+    manuscript.currentVersion = newVersion;
+    manuscript.status = MANUSCRIPT_STATUS.REVISED_SUBMITTED;
+
+    // Add timeline event
+    manuscript.addTimelineEvent(
+      'Revision Submitted',
+      req.user.id,
+      `Version ${newVersion} submitted${req.body.revisionNotes ? ': ' + req.body.revisionNotes : ''}`
+    );
+
+    await manuscript.save();
+
+    // Notify editor
+    if (manuscript.assignedEditor) {
+      await Notification.create({
+        recipient: manuscript.assignedEditor,
+        type: NOTIFICATION_TYPES.REVISION_REQUEST,
+        subject: 'Revised Manuscript Submitted',
+        message: `Author has submitted a revision for manuscript "${manuscript.title}" (${manuscript.manuscriptId}).`,
+        relatedManuscript: manuscript._id
+      });
+
+      const editor = await User.findById(manuscript.assignedEditor);
+      await sendEmail({
+        to: editor.email,
+        subject: 'Revised Manuscript Submitted',
+        template: 'revision-submitted',
+        data: {
+          editorName: editor.fullName,
+          manuscriptId: manuscript.manuscriptId,
+          title: manuscript.title,
+          version: newVersion,
+          revisionNotes: req.body.revisionNotes || 'No notes provided'
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Revision submitted successfully',
+      data: manuscript
+    });
+  } catch (error) {
+    next(error);
+  }
+};
