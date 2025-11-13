@@ -157,9 +157,38 @@ const manuscriptSchema = new mongoose.Schema({
   },
   doi: {
     type: String,
-    trim: true
+    unique: true,
+    sparse: true,
+    validate: {
+      validator: function(v) {
+        return !v || /^10\.\d{4,9}\/[-._;()/:A-Z0-9]+$/i.test(v);
+      },
+      message: 'Invalid DOI format'
+    }
+  },
+  doiMetadata: {
+    depositStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'success', 'failed', 'not_assigned'],
+      default: 'not_assigned'
+    },
+    depositAttempts: {
+      type: Number,
+      default: 0
+    },
+    lastDepositAttempt: Date,
+    depositError: String,
+    depositHistory: [{
+      attemptNumber: Number,
+      timestamp: Date,
+      status: String,
+      error: String,
+      response: mongoose.Schema.Types.Mixed
+    }]
   },
   publishedDate: Date,
+  publicUrl: String, // Stable URL for public access
+  
   submissionDate: {
     type: Date,
     default: Date.now
@@ -204,6 +233,42 @@ manuscriptSchema.methods.addTimelineEvent = function(event, performedBy, details
     timestamp: new Date()
   });
 };
+
+// Method to record DOI deposit attempt
+manuscriptSchema.methods.recordDoiDeposit = function(status, response, error = null) {
+  this.doiMetadata.depositAttempts += 1;
+  this.doiMetadata.lastDepositAttempt = new Date();
+  this.doiMetadata.depositStatus = status;
+  
+  if (error) {
+    this.doiMetadata.depositError = error;
+  }
+  
+  this.doiMetadata.depositHistory.push({
+    attemptNumber: this.doiMetadata.depositAttempts,
+    timestamp: new Date(),
+    status,
+    error,
+    response
+  });
+  
+  if (status === 'success' && response && response.doi) {
+    this.doi = response.doi;
+  }
+};
+
+// Method to generate stable public URL
+manuscriptSchema.methods.generatePublicUrl = function() {
+  if (this.doi) {
+    // Use DOI-based URL (preferred)
+    this.publicUrl = `${process.env.CLIENT_URL}/articles/doi/${encodeURIComponent(this.doi)}`;
+  } else {
+    // Fallback to manuscript ID
+    this.publicUrl = `${process.env.CLIENT_URL}/articles/${this.manuscriptId}`;
+  }
+  return this.publicUrl;
+};
+
 
 // Indexes for search optimization
 manuscriptSchema.index({ title: 'text', abstract: 'text', keywords: 'text' });
