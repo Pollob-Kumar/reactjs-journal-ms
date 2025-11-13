@@ -45,7 +45,7 @@ import UserManagement from './pages/admin/UserManagement';
 import SubmissionManagement from './pages/admin/SubmissionManagement';
 import SystemSettings from './pages/admin/SystemSettings';
 import Analytics from './pages/admin/Analytics';
-import RevisionHistory from './components/common/pages/admin/RevisionHistory';
+import RevisionHistory from './pages/admin/RevisionHistory';
 
 // Public Pages
 import Home from './pages/public/Home';
@@ -54,8 +54,7 @@ import CurrentIssue from './pages/public/CurrentIssue';
 import Archives from './pages/public/Archives';
 import ArticleView from './pages/public/ArticleView';
 import About from './pages/public/About';
-import DoiDeposits from './components/common/pages/admin/DoiDeposits';
-import ArticleView from './components/common/pages/public/ArticleView';
+import DoiDeposits from './pages/admin/DoiDeposits';
 
 // Profile
 import Profile from './pages/Profile';
@@ -91,7 +90,7 @@ function App() {
                 <Route path="/archives" element={<Archives />} />
                 <Route path="/article/:manuscriptId" element={<ArticleView />} />
                 <Route path="/about" element={<About />} />
-                  // In the public routes section:
+                {/* In the public routes section: */}
                 <Route path="/articles/:articleId" element={<ArticleView />} />
                 <Route path="/articles/doi/:doi" element={<ArticleView />} /> {/* Add DOI route */}
               </Route>
@@ -136,9 +135,9 @@ function App() {
                 <Route path="/admin/submissions" element={<PrivateRoute roles={['admin']}><SubmissionManagement /></PrivateRoute>} />
                 <Route path="/admin/settings" element={<PrivateRoute roles={['admin']}><SystemSettings /></PrivateRoute>} />
                 <Route path="/admin/analytics" element={<PrivateRoute roles={['admin']}><Analytics /></PrivateRoute>} />
-                  // ... inside Routes component, in the admin section:
+                {/* ... inside Routes component, in the admin section: */}
                 <Route path="/admin/manuscripts/:manuscriptId/revisions" element={<PrivateRoute roles={['admin']}><RevisionHistory /></PrivateRoute>} />
-                  // In admin routes section:
+                {/* In admin routes section: */}
                 <Route path="/admin/doi/deposits" element={<PrivateRoute roles={['admin']}><DoiDeposits /></PrivateRoute>} />
               </Route>
 
