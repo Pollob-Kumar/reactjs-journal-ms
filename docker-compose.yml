@@ -1,70 +1,72 @@
-version: '3.8'
+# This one is not needed right now.
 
-services:
-  mongodb:
-    image: mongo:7.0
-    container_name: pujms-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: adminpassword
-      MONGO_INITDB_DATABASE: pujms
-    volumes:
-      - mongodb_data:/data/db
-      - mongodb_config:/data/configdb
-    networks:
-      - pujms-network
+# version: '3.8'
 
-  backend:
-    build: ./backend
-    container_name: pujms-backend
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-    environment:
-      NODE_ENV: development
-      PORT: 5000
-      MONGODB_URI: mongodb://admin:adminpassword@mongodb:27017/pujms?authSource=admin
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      JWT_EXPIRE: 7d
-      SMTP_HOST: smtp.gmail.com
-      SMTP_PORT: 587
-      SMTP_USER: your-email@gmail.com
-      SMTP_PASS: your-app-password
-      SMTP_FROM: noreply@pundra.edu
-      CLIENT_URL: http://localhost:3000
-      CROSSREF_API_URL: https://api.crossref.org
-      CROSSREF_API_KEY: your-crossref-api-key
-    depends_on:
-      - mongodb
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-    networks:
-      - pujms-network
+# services:
+#   mongodb:
+#     image: mongo:7.0
+#     container_name: pujms-mongodb
+#     restart: unless-stopped
+#     ports:
+#       - "27017:27017"
+#     environment:
+#       MONGO_INITDB_ROOT_USERNAME: admin
+#       MONGO_INITDB_ROOT_PASSWORD: adminpassword
+#       MONGO_INITDB_DATABASE: pujms
+#     volumes:
+#       - mongodb_data:/data/db
+#       - mongodb_config:/data/configdb
+#     networks:
+#       - pujms-network
 
-  frontend:
-    build: ./frontend
-    container_name: pujms-frontend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      REACT_APP_API_URL: http://localhost:5000/api
-    depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    networks:
-      - pujms-network
+#   backend:
+#     build: ./backend
+#     container_name: pujms-backend
+#     restart: unless-stopped
+#     ports:
+#       - "5000:5000"
+#     environment:
+#       NODE_ENV: development
+#       PORT: 5000
+#       MONGODB_URI: mongodb://admin:adminpassword@mongodb:27017/pujms?authSource=admin
+#       JWT_SECRET: your-super-secret-jwt-key-change-in-production
+#       JWT_EXPIRE: 7d
+#       SMTP_HOST: smtp.gmail.com
+#       SMTP_PORT: 587
+#       SMTP_USER: your-email@gmail.com
+#       SMTP_PASS: your-app-password
+#       SMTP_FROM: noreply@pundra.edu
+#       CLIENT_URL: http://localhost:3000
+#       CROSSREF_API_URL: https://api.crossref.org
+#       CROSSREF_API_KEY: your-crossref-api-key
+#     depends_on:
+#       - mongodb
+#     volumes:
+#       - ./backend:/app
+#       - /app/node_modules
+#     networks:
+#       - pujms-network
 
-volumes:
-  mongodb_data:
-  mongodb_config:
+#   frontend:
+#     build: ./frontend
+#     container_name: pujms-frontend
+#     restart: unless-stopped
+#     ports:
+#       - "3000:3000"
+#     environment:
+#       REACT_APP_API_URL: http://localhost:5000/api
+#     depends_on:
+#       - backend
+#     volumes:
+#       - ./frontend:/app
+#       - /app/node_modules
+#     networks:
+#       - pujms-network
 
-networks:
-  pujms-network:
-    driver: bridge
+# volumes:
+#   mongodb_data:
+#   mongodb_config:
+
+# networks:
+#   pujms-network:
+#     driver: bridge
