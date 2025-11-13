@@ -106,18 +106,42 @@ const ManageIssues = () => {
     }
   };
 
-  const handlePublishIssue = async () => {
-    try {
-      await api.post(`/issues/${selectedIssue._id}/publish`);
-      alert('Issue published successfully!');
-      setShowPublishDialog(false);
-      setSelectedIssue(null);
-      fetchData();
-    } catch (err) {
-      console.error('Error publishing issue:', err);
-      alert(err.response?.data?.message || 'Failed to publish issue');
+  // frontend/src/components/common/pages/editor/ManageIssues.js
+// Update the handlePublishIssue method
+
+const handlePublishIssue = async (issueId) => {
+  if (!window.confirm('Are you sure you want to publish this issue? This will make all articles publicly accessible and attempt to assign DOIs.')) {
+    return;
+  }
+
+  try {
+    setActionLoading(true);
+    const response = await api.put(`/issues/${issueId}/publish`);
+    
+    // Show detailed results
+    const { data } = response.data;
+    let message = `Issue published successfully!\n\n`;
+    message += `Total articles: ${data.manuscripts?.length || 0}\n`;
+    
+    if (data.doiResults) {
+      const successful = data.doiResults.filter(r => r.success).length;
+      const failed = data.doiResults.filter(r => !r.success).length;
+      message += `DOIs assigned: ${successful}\n`;
+      if (failed > 0) {
+        message += `DOI assignment failed: ${failed}\n`;
+        message += `Check DOI Deposit Management for details.`;
+      }
     }
-  };
+    
+    alert(message);
+    fetchData();
+    setActionLoading(false);
+  } catch (err) {
+    console.error('Error publishing issue:', err);
+    alert(err.response?.data?.message || 'Failed to publish issue');
+    setActionLoading(false);
+  }
+};
 
   const handleDeleteIssue = async (issueId) => {
     if (!window.confirm('Are you sure you want to delete this issue? This action cannot be undone.')) {
