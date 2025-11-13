@@ -228,13 +228,13 @@ exports.removeManuscriptFromIssue = async (req, res, next) => {
   }
 };
 
-// @desc    Publish issue
-// @route   PUT /api/issues/:id/publish
-// @access  Private (Editor, Admin)
+// backend/src/controllers/issueController.js
+// Update the publishIssue method
+
 exports.publishIssue = async (req, res, next) => {
   try {
     const issue = await Issue.findById(req.params.id)
-      .populate('manuscripts.manuscript');
+      .populate('manuscripts');
 
     if (!issue) {
       return res.status(404).json({
@@ -243,67 +243,78 @@ exports.publishIssue = async (req, res, next) => {
       });
     }
 
-    if (issue.isPublished) {
+    if (issue.status === 'Published') {
       return res.status(400).json({
         success: false,
         message: 'Issue is already published'
       });
     }
 
-    if (issue.manuscripts.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot publish an empty issue'
-      });
-    }
-
-    // Assign DOIs to all manuscripts in the issue
-    for (const item of issue.manuscripts) {
-      const manuscript = item.manuscript;
+    // Update all manuscripts in the issue
+    const doiResults = [];
+    
+    for (const manuscriptRef of issue.manuscripts) {
+      const manuscript = await Manuscript.findById(manuscriptRef);
       
-      if (!manuscript.doi) {
-        try {
-          // Get corresponding author email
-          const correspondingAuthor = manuscript.authors.find(a => a.isCorresponding);
-          const authorEmail = correspondingAuthor ? correspondingAuthor.email : manuscript.authors[0].email;
+      if (manuscript && manuscript.status === MANUSCRIPT_STATUS.ACCEPTED) {
+        // Generate public URL
+        manuscript.generatePublicUrl();
+        
+        // Attempt DOI assignment if not already assigned
+        if (!manuscript.doi) {
+          try {
+            const correspondingAuthor = manuscript.authors.find(a => a.isCorresponding);
+            const authorEmail = correspondingAuthor ? correspondingAuthor.email : manuscript.authors[0].email;
 
-          const doiData = {
-            title: manuscript.title,
-            authors: manuscript.authors.map(a => ({
-              given: a.firstName,
-              family: a.lastName,
-              affiliation: [{ name: a.affiliation }],
-              ORCID: a.orcid || undefined
-            })),
-            publishedDate: new Date(),
-            volume: issue.volume,
-            issue: issue.issueNumber,
-            year: issue.year,
-            abstract: manuscript.abstract,
-            url: `${process.env.CLIENT_URL}/articles/${manuscript.manuscriptId}`,
-            email: authorEmail
-          };
+            const doiData = {
+              title: manuscript.title,
+              authors: manuscript.authors.map(a => ({
+                given: a.firstName,
+                family: a.lastName,
+                affiliation: [{ name: a.affiliation }],
+                ORCID: a.orcid || undefined
+              })),
+              publishedDate: new Date(),
+              volume: issue.volume,
+              issue: issue.issueNumber,
+              year: issue.year,
+              abstract: manuscript.abstract,
+              url: manuscript.publicUrl,
+              email: authorEmail
+            };
 
-          const doi = await assignDOI(doiData);
-          manuscript.doi = doi;
-          manuscript.status = MANUSCRIPT_STATUS.PUBLISHED;
-          manuscript.publishedDate = new Date();
-          
-          // Add timeline event
-          manuscript.addTimelineEvent(
-            'Published',
-            req.user.id,
-            `Published in ${issue.issueIdentifier} with DOI: ${doi}`
-          );
-          
-          await manuscript.save();
-        } catch (doiError) {
-          console.error(`Error assigning DOI to manuscript ${manuscript.manuscriptId}:`, doiError);
-          return res.status(500).json({
-            success: false,
-            message: `Failed to assign DOI to manuscript ${manuscript.manuscriptId}: ${doiError.message}`
-          });
+            const doi = await assignDOI(doiData);
+            manuscript.recordDoiDeposit('success', { doi, timestamp: new Date() });
+            manuscript.doi = doi;
+            manuscript.generatePublicUrl(); // Regenerate with DOI
+            
+            doiResults.push({
+              manuscriptId: manuscript.manuscriptId,
+              success: true,
+              doi
+            });
+          } catch (doiError) {
+            console.error(`Error assigning DOI to manuscript ${manuscript.manuscriptId}:`, doiError);
+            manuscript.recordDoiDeposit('failed', null, doiError.message);
+            
+            doiResults.push({
+              manuscriptId: manuscript.manuscriptId,
+              success: false,
+              error: doiError.message
+            });
+          }
         }
+
+        manuscript.status = MANUSCRIPT_STATUS.PUBLISHED;
+        manuscript.publishedDate = new Date();
+        
+        manuscript.addTimelineEvent(
+          'Published',
+          req.user.id,
+          `Published in ${issue.issueIdentifier}${manuscript.doi ? ' with DOI: ' + manuscript.doi : ''}`
+        );
+        
+        await manuscript.save();
       }
     }
 
@@ -314,7 +325,11 @@ exports.publishIssue = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Issue published successfully',
-      data: issue
+      data: {
+        issue,
+        manuscripts: issue.manuscripts,
+        doiResults
+      }
     });
   } catch (error) {
     next(error);
