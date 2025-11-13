@@ -683,3 +683,51 @@ exports.submitRevision = async (req, res, next) => {
     next(error);
   }
 };
+
+// backend/src/controllers/manuscriptController.js - Update getManuscript to include publicUrl
+
+exports.getManuscript = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findById(req.params.id)
+      .populate('submittedBy', 'firstName lastName email affiliation')
+      .populate('assignedEditor', 'firstName lastName email')
+      .populate('reviews');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    // Check authorization
+    const isAuthor = manuscript.submittedBy._id.toString() === req.user.id.toString();
+    const isEditor = req.user.roles.includes(ROLES.EDITOR);
+    const isAdmin = req.user.roles.includes(ROLES.ADMIN);
+    const isAssignedEditor = manuscript.assignedEditor && 
+                            manuscript.assignedEditor._id.toString() === req.user.id.toString();
+    
+    const isReviewer = await Review.findOne({
+      manuscript: req.params.id,
+      reviewer: req.user.id
+    });
+
+    if (!isAuthor && !isEditor && !isAdmin && !isAssignedEditor && !isReviewer) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to access this manuscript'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...manuscript.toObject(),
+        publicUrl: manuscript.publicUrl, // Include public URL
+        doiMetadata: isAdmin || isEditor ? manuscript.doiMetadata : undefined // Include DOI metadata for admins/editors
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
