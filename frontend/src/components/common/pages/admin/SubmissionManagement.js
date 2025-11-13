@@ -291,6 +291,13 @@ const SubmissionManagement = () => {
                               title="Delete Submission"
                             >
                               <i className="fas fa-trash"></i>
+                              <Link
+                                  to={`/admin/manuscripts/${manuscript._id}/revisions`}
+                                  className="btn btn-outline btn-sm"
+                                  title="View Revision History"
+                                >
+                                  <i className="fas fa-history"></i> Revisions
+                                </Link>
                             </button>
                           </div>
                         </td>
