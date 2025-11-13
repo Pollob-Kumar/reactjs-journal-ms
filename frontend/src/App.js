@@ -45,6 +45,7 @@ import UserManagement from './pages/admin/UserManagement';
 import SubmissionManagement from './pages/admin/SubmissionManagement';
 import SystemSettings from './pages/admin/SystemSettings';
 import Analytics from './pages/admin/Analytics';
+import RevisionHistory from './components/common/pages/admin/RevisionHistory';
 
 // Public Pages
 import Home from './pages/public/Home';
@@ -130,6 +131,8 @@ function App() {
                 <Route path="/admin/submissions" element={<PrivateRoute roles={['admin']}><SubmissionManagement /></PrivateRoute>} />
                 <Route path="/admin/settings" element={<PrivateRoute roles={['admin']}><SystemSettings /></PrivateRoute>} />
                 <Route path="/admin/analytics" element={<PrivateRoute roles={['admin']}><Analytics /></PrivateRoute>} />
+                  // ... inside Routes component, in the admin section:
+                <Route path="/admin/manuscripts/:manuscriptId/revisions" element={<PrivateRoute roles={['admin']}><RevisionHistory /></PrivateRoute>} />
               </Route>
 
               {/* 404 */}
