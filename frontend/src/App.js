@@ -54,6 +54,7 @@ import CurrentIssue from './pages/public/CurrentIssue';
 import Archives from './pages/public/Archives';
 import ArticleView from './pages/public/ArticleView';
 import About from './pages/public/About';
+import DoiDeposits from './components/common/pages/admin/DoiDeposits';
 
 // Profile
 import Profile from './pages/Profile';
@@ -133,6 +134,8 @@ function App() {
                 <Route path="/admin/analytics" element={<PrivateRoute roles={['admin']}><Analytics /></PrivateRoute>} />
                   // ... inside Routes component, in the admin section:
                 <Route path="/admin/manuscripts/:manuscriptId/revisions" element={<PrivateRoute roles={['admin']}><RevisionHistory /></PrivateRoute>} />
+                  // In admin routes section:
+                <Route path="/admin/doi/deposits" element={<PrivateRoute roles={['admin']}><DoiDeposits /></PrivateRoute>} />
               </Route>
 
               {/* 404 */}
