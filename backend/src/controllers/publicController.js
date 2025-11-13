@@ -1,137 +1,22 @@
+// backend/src/controllers/publicController.js - Add public file access
+
 const Manuscript = require('../models/Manuscript');
-const Issue = require('../models/Issue');
+const { getFileStream } = require('../config/gridfs');
 const { MANUSCRIPT_STATUS } = require('../config/constants');
 
-// @desc    Search published articles
-// @route   GET /api/public/search
+// @desc    Get public article by DOI
+// @route   GET /api/public/articles/doi/:doi
 // @access  Public
-exports.searchArticles = async (req, res, next) => {
+exports.getArticleByDoi = async (req, res, next) => {
   try {
-    const { q, author, keyword, page = 1, limit = 10 } = req.query;
+    const doi = decodeURIComponent(req.params.doi);
 
-    let query = { status: MANUSCRIPT_STATUS.PUBLISHED };
-
-    if (q) {
-      // Text search across title and abstract
-      query.$text = { $search: q };
-    }
-
-    if (author) {
-      query.$or = [
-        { 'authors.firstName': { $regex: author, $options: 'i' } },
-        { 'authors.lastName': { $regex: author, $options: 'i' } }
-      ];
-    }
-
-    if (keyword) {
-      query.keywords = { $in: [new RegExp(keyword, 'i')] };
-    }
-
-    const manuscripts = await Manuscript.find(query)
-      .select('manuscriptId title abstract keywords authors doi publishedDate publishedIn')
-      .populate('publishedIn', 'volume issueNumber year')
-      .sort({ publishedDate: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
-
-    const count = await Manuscript.countDocuments(query);
-
-    res.status(200).json({
-      success: true,
-      data: manuscripts,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(count / limit),
-        totalItems: count,
-        itemsPerPage: parseInt(limit)
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get current issue
-// @route   GET /api/public/current-issue
-// @access  Public
-exports.getCurrentIssue = async (req, res, next) => {
-  try {
-    const currentIssue = await Issue.findOne({ isPublished: true })
-      .populate({
-        path: 'manuscripts.manuscript',
-        select: 'manuscriptId title authors abstract keywords doi publishedDate'
-      })
-      .sort({ year: -1, volume: -1, issueNumber: -1 });
-
-    if (!currentIssue) {
-      return res.status(404).json({
-        success: false,
-        message: 'No published issue found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: currentIssue
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get archived issues
-// @route   GET /api/public/archives
-// @access  Public
-exports.getArchives = async (req, res, next) => {
-  try {
-    const { year, page = 1, limit = 10 } = req.query;
-
-    let query = { isPublished: true };
-
-    if (year) {
-      query.year = parseInt(year);
-    }
-
-    const issues = await Issue.find(query)
-      .select('volume issueNumber title year publishedDate')
-      .sort({ year: -1, volume: -1, issueNumber: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
-
-    const count = await Issue.countDocuments(query);
-
-    // Get distinct years for filtering
-    const years = await Issue.distinct('year', { isPublished: true });
-
-    res.status(200).json({
-      success: true,
-      data: issues,
-      availableYears: years.sort((a, b) => b - a),
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(count / limit),
-        totalItems: count,
-        itemsPerPage: parseInt(limit)
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get published article by manuscript ID
-// @route   GET /api/public/articles/:manuscriptId
-// @access  Public
-exports.getArticle = async (req, res, next) => {
-  try {
-    const manuscript = await Manuscript.findOne({
-      manuscriptId: req.params.manuscriptId,
-      status: MANUSCRIPT_STATUS.PUBLISHED
+    const manuscript = await Manuscript.findOne({ 
+      doi,
+      status: MANUSCRIPT_STATUS.PUBLISHED 
     })
-      .populate('publishedIn', 'volume issueNumber year title')
-      .select('-reviews -timeline -files -revisions');
+      .populate('submittedBy', 'firstName lastName email affiliation')
+      .populate('assignedEditor', 'firstName lastName');
 
     if (!manuscript) {
       return res.status(404).json({
@@ -142,28 +27,117 @@ exports.getArticle = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: manuscript
+      data: {
+        manuscriptId: manuscript.manuscriptId,
+        title: manuscript.title,
+        abstract: manuscript.abstract,
+        keywords: manuscript.keywords,
+        authors: manuscript.authors,
+        doi: manuscript.doi,
+        publicUrl: manuscript.publicUrl,
+        publishedDate: manuscript.publishedDate,
+        submissionDate: manuscript.submissionDate,
+        files: manuscript.files.map(f => ({
+          fileId: f.fileId,
+          originalName: f.originalName,
+          size: f.size,
+          fileType: f.fileType
+        }))
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get article statistics
-// @route   GET /api/public/stats
+// @desc    Download public article file
+// @route   GET /api/public/articles/:manuscriptId/download
 // @access  Public
-exports.getPublicStats = async (req, res, next) => {
+exports.downloadPublicArticle = async (req, res, next) => {
   try {
-    const totalArticles = await Manuscript.countDocuments({ status: MANUSCRIPT_STATUS.PUBLISHED });
-    const totalIssues = await Issue.countDocuments({ isPublished: true });
-    const totalVolumes = await Issue.distinct('volume', { isPublished: true });
+    const manuscript = await Manuscript.findOne({
+      $or: [
+        { _id: req.params.manuscriptId },
+        { manuscriptId: req.params.manuscriptId }
+      ],
+      status: MANUSCRIPT_STATUS.PUBLISHED
+    });
 
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Article not found or not published'
+      });
+    }
+
+    // Get the main manuscript file (usually the first PDF)
+    const mainFile = manuscript.files.find(f => 
+      f.fileType === 'manuscript' || f.originalName.toLowerCase().endsWith('.pdf')
+    ) || manuscript.files[0];
+
+    if (!mainFile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Article file not found'
+      });
+    }
+
+    // Stream the file
+    const fileStream = getFileStream(mainFile.fileId);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${manuscript.manuscriptId}.pdf"`,
+      'Cache-Control': 'public, max-age=31536000', // Cache for 1 year
+      'X-DOI': manuscript.doi || '',
+      'X-Manuscript-ID': manuscript.manuscriptId
+    });
+
+    fileStream.on('error', (error) => {
+      console.error('File stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error streaming file'
+        });
+      }
+    });
+
+    fileStream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get article view/download statistics
+// @route   GET /api/public/articles/:manuscriptId/stats
+// @access  Public
+exports.getArticleStats = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findOne({
+      $or: [
+        { _id: req.params.manuscriptId },
+        { manuscriptId: req.params.manuscriptId }
+      ],
+      status: MANUSCRIPT_STATUS.PUBLISHED
+    });
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Article not found'
+      });
+    }
+
+    // For future implementation: track views/downloads
     res.status(200).json({
       success: true,
       data: {
-        totalArticles,
-        totalIssues,
-        totalVolumes: totalVolumes.length
+        manuscriptId: manuscript.manuscriptId,
+        views: 0, // Implement view tracking
+        downloads: 0, // Implement download tracking
+        publicUrl: manuscript.publicUrl,
+        doi: manuscript.doi
       }
     });
   } catch (error) {
