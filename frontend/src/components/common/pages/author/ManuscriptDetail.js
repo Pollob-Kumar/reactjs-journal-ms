@@ -116,6 +116,28 @@ const ManuscriptDetail = () => {
               </a>
             </div>
           )}
+            {manuscript.publicUrl && (
+  <div className="info-item">
+    <label>Public URL</label>
+    <a 
+      href={manuscript.publicUrl} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="public-url-link"
+    >
+      {manuscript.publicUrl}
+      <i className="fas fa-external-link-alt" style={{ marginLeft: '0.5rem' }}></i>
+    </a>
+  </div>
+)}
+
+{manuscript.status === 'Published' && (
+  <div className="published-notice">
+    <i className="fas fa-check-circle"></i>
+    <span>This manuscript has been published and is publicly accessible</span>
+  </div>
+)}
+
         </div>
       </Card>
 
