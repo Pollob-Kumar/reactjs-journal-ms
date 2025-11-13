@@ -218,6 +218,31 @@ exports.getSystemStatistics = async (req, res, next) => {
       submissionDate: { $gte: thirtyDaysAgo }
     });
 
+    // DOI Statistics
+    const doiStats = await Manuscript.aggregate([
+      { $match: { status: MANUSCRIPT_STATUS.PUBLISHED } },
+      {
+        $group: {
+          _id: '$doiMetadata.depositStatus',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const doiStatistics = {
+      total: 0,
+      not_assigned: 0,
+      pending: 0,
+      processing: 0,
+      success: 0,
+      failed: 0
+    };
+
+     doiStats.forEach(stat => {
+      doiStatistics[stat._id] = stat.count;
+      doiStatistics.total += stat.count;
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -241,7 +266,8 @@ exports.getSystemStatistics = async (req, res, next) => {
           totalIssues,
           publishedIssues,
           publishedPapers
-        }
+        },
+        doi: doiStatistics
       }
     });
   } catch (error) {
