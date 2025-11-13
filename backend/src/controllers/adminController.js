@@ -4,6 +4,11 @@ const Review = require('../models/Review');
 const Issue = require('../models/Issue');
 const Notification = require('../models/Notification');
 const { ROLES } = require('../config/constants');
+// backend/src/controllers/adminController.js - Add DOI management methods
+
+const Manuscript = require('../models/Manuscript');
+const { assignDOI } = require('../services/doiService');
+const { MANUSCRIPT_STATUS } = require('../config/constants');
 
 // @desc    Get all users
 // @route   GET /api/admin/users
@@ -514,6 +519,352 @@ exports.compareRevisions = async (req, res, next) => {
           }
         }
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all manuscripts with DOI deposit status
+// @route   GET /api/admin/doi/deposits
+// @access  Private (Admin)
+exports.getDoiDeposits = async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+
+    let query = {
+      status: MANUSCRIPT_STATUS.PUBLISHED
+    };
+
+    // Filter by deposit status
+    if (status && status !== 'all') {
+      query['doiMetadata.depositStatus'] = status;
+    }
+
+    const manuscripts = await Manuscript.find(query)
+      .select('manuscriptId title doi doiMetadata publishedDate publicUrl status')
+      .populate('submittedBy', 'firstName lastName email')
+      .sort({ 'doiMetadata.lastDepositAttempt': -1, publishedDate: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .exec();
+
+    const count = await Manuscript.countDocuments(query);
+
+    // Calculate statistics
+    const stats = await Manuscript.aggregate([
+      { $match: { status: MANUSCRIPT_STATUS.PUBLISHED } },
+      {
+        $group: {
+          _id: '$doiMetadata.depositStatus',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const statistics = {
+      total: 0,
+      not_assigned: 0,
+      pending: 0,
+      processing: 0,
+      success: 0,
+      failed: 0
+    };
+
+    stats.forEach(stat => {
+      statistics[stat._id] = stat.count;
+      statistics.total += stat.count;
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        manuscripts,
+        statistics,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(count / limit),
+          totalItems: count,
+          itemsPerPage: parseInt(limit)
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get DOI deposit details for a manuscript
+// @route   GET /api/admin/doi/deposits/:id
+// @access  Private (Admin)
+exports.getDoiDepositDetails = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findById(req.params.id)
+      .populate('submittedBy', 'firstName lastName email affiliation')
+      .populate('assignedEditor', 'firstName lastName email');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        manuscriptId: manuscript.manuscriptId,
+        title: manuscript.title,
+        doi: manuscript.doi,
+        publicUrl: manuscript.publicUrl,
+        publishedDate: manuscript.publishedDate,
+        status: manuscript.status,
+        doiMetadata: manuscript.doiMetadata,
+        authors: manuscript.authors,
+        submittedBy: manuscript.submittedBy,
+        assignedEditor: manuscript.assignedEditor
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Retry DOI deposit for a manuscript
+// @route   POST /api/admin/doi/deposits/:id/retry
+// @access  Private (Admin)
+exports.retryDoiDeposit = async (req, res, next) => {
+  try {
+    const manuscript = await Manuscript.findById(req.params.id)
+      .populate('submittedBy', 'email');
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    if (manuscript.status !== MANUSCRIPT_STATUS.PUBLISHED) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only published manuscripts can have DOI assigned'
+      });
+    }
+
+    // Update deposit status to processing
+    manuscript.doiMetadata.depositStatus = 'processing';
+    await manuscript.save();
+
+    // Attempt DOI assignment
+    try {
+      const correspondingAuthor = manuscript.authors.find(a => a.isCorresponding);
+      const authorEmail = correspondingAuthor ? correspondingAuthor.email : manuscript.authors[0].email;
+
+      const doiData = {
+        title: manuscript.title,
+        authors: manuscript.authors.map(a => ({
+          given: a.firstName,
+          family: a.lastName,
+          affiliation: [{ name: a.affiliation }],
+          ORCID: a.orcid || undefined
+        })),
+        publishedDate: manuscript.publishedDate || new Date(),
+        abstract: manuscript.abstract,
+        url: manuscript.publicUrl || `${process.env.CLIENT_URL}/articles/${manuscript.manuscriptId}`,
+        email: authorEmail
+      };
+
+      const doi = await assignDOI(doiData);
+
+      // Record successful deposit
+      manuscript.recordDoiDeposit('success', { doi, timestamp: new Date() });
+      manuscript.doi = doi;
+      
+      // Generate and save public URL
+      manuscript.generatePublicUrl();
+      
+      await manuscript.save();
+
+      // Add timeline event
+      manuscript.addTimelineEvent(
+        'DOI Assigned',
+        req.user.id,
+        `DOI ${doi} successfully assigned (retry by admin)`
+      );
+      await manuscript.save();
+
+      res.status(200).json({
+        success: true,
+        message: 'DOI deposit successful',
+        data: {
+          doi,
+          publicUrl: manuscript.publicUrl,
+          depositStatus: manuscript.doiMetadata.depositStatus
+        }
+      });
+    } catch (doiError) {
+      // Record failed deposit
+      manuscript.recordDoiDeposit('failed', null, doiError.message);
+      await manuscript.save();
+
+      return res.status(500).json({
+        success: false,
+        message: 'DOI deposit failed',
+        error: doiError.message
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Manually assign DOI to a manuscript
+// @route   POST /api/admin/doi/deposits/:id/assign
+// @access  Private (Admin)
+exports.manuallyAssignDoi = async (req, res, next) => {
+  try {
+    const { doi } = req.body;
+
+    if (!doi) {
+      return res.status(400).json({
+        success: false,
+        message: 'DOI is required'
+      });
+    }
+
+    // Validate DOI format
+    const doiRegex = /^10\.\d{4,9}\/[-._;()/:A-Z0-9]+$/i;
+    if (!doiRegex.test(doi)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid DOI format'
+      });
+    }
+
+    const manuscript = await Manuscript.findById(req.params.id);
+
+    if (!manuscript) {
+      return res.status(404).json({
+        success: false,
+        message: 'Manuscript not found'
+      });
+    }
+
+    // Check if DOI already exists
+    const existingDoi = await Manuscript.findOne({ doi });
+    if (existingDoi && existingDoi._id.toString() !== manuscript._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'This DOI is already assigned to another manuscript'
+      });
+    }
+
+    // Manually assign DOI
+    manuscript.doi = doi;
+    manuscript.doiMetadata.depositStatus = 'success';
+    manuscript.doiMetadata.depositAttempts += 1;
+    manuscript.doiMetadata.lastDepositAttempt = new Date();
+    
+    manuscript.doiMetadata.depositHistory.push({
+      attemptNumber: manuscript.doiMetadata.depositAttempts,
+      timestamp: new Date(),
+      status: 'success',
+      error: null,
+      response: { doi, manual: true, assignedBy: req.user.id }
+    });
+
+    // Generate public URL
+    manuscript.generatePublicUrl();
+
+    await manuscript.save();
+
+    // Add timeline event
+    manuscript.addTimelineEvent(
+      'DOI Manually Assigned',
+      req.user.id,
+      `DOI ${doi} manually assigned by admin`
+    );
+    await manuscript.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'DOI manually assigned successfully',
+      data: {
+        doi,
+        publicUrl: manuscript.publicUrl
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Bulk retry failed DOI deposits
+// @route   POST /api/admin/doi/deposits/bulk-retry
+// @access  Private (Admin)
+exports.bulkRetryDoiDeposits = async (req, res, next) => {
+  try {
+    const failedManuscripts = await Manuscript.find({
+      status: MANUSCRIPT_STATUS.PUBLISHED,
+      'doiMetadata.depositStatus': 'failed'
+    }).limit(50); // Process 50 at a time
+
+    const results = {
+      total: failedManuscripts.length,
+      success: 0,
+      failed: 0,
+      details: []
+    };
+
+    for (const manuscript of failedManuscripts) {
+      try {
+        const correspondingAuthor = manuscript.authors.find(a => a.isCorresponding);
+        const authorEmail = correspondingAuthor ? correspondingAuthor.email : manuscript.authors[0].email;
+
+        const doiData = {
+          title: manuscript.title,
+          authors: manuscript.authors.map(a => ({
+            given: a.firstName,
+            family: a.lastName,
+            affiliation: [{ name: a.affiliation }],
+            ORCID: a.orcid || undefined
+          })),
+          publishedDate: manuscript.publishedDate || new Date(),
+          abstract: manuscript.abstract,
+          url: manuscript.publicUrl || `${process.env.CLIENT_URL}/articles/${manuscript.manuscriptId}`,
+          email: authorEmail
+        };
+
+        const doi = await assignDOI(doiData);
+        manuscript.recordDoiDeposit('success', { doi, timestamp: new Date() });
+        manuscript.doi = doi;
+        manuscript.generatePublicUrl();
+        await manuscript.save();
+
+        results.success++;
+        results.details.push({
+          manuscriptId: manuscript.manuscriptId,
+          status: 'success',
+          doi
+        });
+      } catch (error) {
+        manuscript.recordDoiDeposit('failed', null, error.message);
+        await manuscript.save();
+
+        results.failed++;
+        results.details.push({
+          manuscriptId: manuscript.manuscriptId,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Bulk retry completed: ${results.success} succeeded, ${results.failed} failed`,
+      data: results
     });
   } catch (error) {
     next(error);
