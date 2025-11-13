@@ -10,7 +10,12 @@ const {
   deleteManuscriptAdmin,
   getManuscriptRevisions,
   getRevisionDetails,
-  compareRevisions
+  compareRevisions,
+  getDoiDeposits,
+  getDoiDepositDetails,
+  retryDoiDeposit,
+  manuallyAssignDoi,
+  bulkRetryDoiDeposits
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
@@ -38,5 +43,12 @@ router.delete('/manuscripts/:id', mongoIdValidation.param, validate, deleteManus
 router.get('/manuscripts/:id/revisions', mongoIdValidation.param, validate, getManuscriptRevisions);
 router.get('/manuscripts/:id/revisions/:version', validate, getRevisionDetails);
 router.get('/manuscripts/:id/revisions/compare/:version1/:version2', validate, compareRevisions);
+
+// DOI deposit management
+router.get('/doi/deposits', getDoiDeposits);
+router.get('/doi/deposits/:id', mongoIdValidation.param, validate, getDoiDepositDetails);
+router.post('/doi/deposits/:id/retry', mongoIdValidation.param, validate, retryDoiDeposit);
+router.post('/doi/deposits/:id/assign', mongoIdValidation.param, validate, manuallyAssignDoi);
+router.post('/doi/deposits/bulk-retry', bulkRetryDoiDeposits);
 
 module.exports = router;
