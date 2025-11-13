@@ -196,6 +196,53 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+
+
+{/* DOI Statistics */}
+<div className="stats-category">
+  <h3>DOI Management</h3>
+  <div className="stats-grid">
+    <Card className="stat-card">
+      <div className="stat-icon">
+        <i className="fas fa-link"></i>
+      </div>
+      <div className="stat-content">
+        <h3>{statistics.doi?.success || 0}</h3>
+        <p>DOIs Assigned</p>
+      </div>
+      <Link to="/admin/doi/deposits?status=success" className="stat-link">
+        View <i className="fas fa-arrow-right"></i>
+      </Link>
+    </Card>
+
+    <Card className="stat-card">
+      <div className="stat-icon">
+        <i className="fas fa-exclamation-triangle"></i>
+      </div>
+      <div className="stat-content">
+        <h3>{statistics.doi?.failed || 0}</h3>
+        <p>Failed Deposits</p>
+      </div>
+      <Link to="/admin/doi/deposits?status=failed" className="stat-link">
+        Retry <i className="fas fa-arrow-right"></i>
+      </Link>
+    </Card>
+
+    <Card className="stat-card">
+      <div className="stat-icon">
+        <i className="fas fa-clock"></i>
+      </div>
+      <div className="stat-content">
+        <h3>{statistics.doi?.not_assigned || 0}</h3>
+        <p>Pending Assignment</p>
+      </div>
+      <Link to="/admin/doi/deposits?status=not_assigned" className="stat-link">
+        Assign <i className="fas fa-arrow-right"></i>
+      </Link>
+    </Card>
+  </div>
+</div>
+
           {/* Submission Statistics */}
           <div className="stats-category">
             <h3>Manuscript Management</h3>
