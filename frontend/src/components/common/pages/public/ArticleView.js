@@ -1,5 +1,7 @@
+// frontend/src/components/common/pages/public/ArticleView.js - Update to use stable URLs
+
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useLocation, Link } from 'react-router-dom';
 import api from '../../services/api';
 import PublicLayout from '../../components/common/PublicLayout';
 import Loading from '../../components/common/Loading';
@@ -8,70 +10,52 @@ import Card from '../../components/common/Card';
 import './ArticleView.css';
 
 const ArticleView = () => {
-  const { articleId } = useParams();
+  const { articleId, doi } = useParams();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [article, setArticle] = useState(null);
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [viewMode, setViewMode] = useState('viewer'); // 'viewer' or 'download'
+  const [viewMode, setViewMode] = useState('viewer');
+  const isDOIRoute = location.pathname.includes('/doi/');
 
   useEffect(() => {
     fetchArticle();
-  }, [articleId]);
+  }, [articleId, doi]);
 
   const fetchArticle = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await api.get(`/public/articles/${articleId}`);
-      setArticle(response.data);
-
-      // Get PDF URL for viewing
-      if (response.data.manuscriptFile?.fileId) {
-        const fileUrl = await getFileUrl(response.data.manuscriptFile.fileId);
-        setPdfUrl(fileUrl);
+      let response;
+      if (isDOIRoute && doi) {
+        // Fetch by DOI
+        response = await api.get(`/public/articles/doi/${encodeURIComponent(doi)}`);
+      } else {
+        // Fetch by manuscript ID
+        response = await api.get(`/public/articles/${articleId}`);
       }
-
+      
+      setArticle(response.data.data);
+      setLoading(false);
     } catch (err) {
       console.error('Error fetching article:', err);
       setError(err.response?.data?.message || 'Failed to load article');
-    } finally {
       setLoading(false);
-    }
-  };
-
-  const getFileUrl = async (fileId) => {
-    try {
-      const response = await api.get(`/public/files/${fileId}`, {
-        responseType: 'blob'
-      });
-      return URL.createObjectURL(response.data);
-    } catch (err) {
-      console.error('Error fetching file:', err);
-      return null;
     }
   };
 
   const handleDownloadPDF = async () => {
     try {
-      if (!article?.manuscriptFile?.fileId) {
-        alert('PDF file not found');
-        return;
-      }
-
-      const response = await api.get(
-        `/public/files/${article.manuscriptFile.fileId}`,
-        { responseType: 'blob' }
-      );
-
+      const manuscriptId = article.manuscriptId || article._id;
+      const response = await api.get(`/public/articles/${manuscriptId}/download`, {
+        responseType: 'blob'
+      });
+      
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute(
-        'download',
-        `${article.manuscriptId || 'article'}.pdf`
-      );
+      link.setAttribute('download', `${article.manuscriptId || 'article'}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -87,7 +71,7 @@ const ArticleView = () => {
 
     let citation = '';
     const authors = article.authors?.map(a => `${a.lastName}, ${a.firstName.charAt(0)}.`).join(', ') || '';
-    const year = new Date(article.publishedAt || article.submittedAt).getFullYear();
+    const year = new Date(article.publishedDate || article.submittedAt).getFullYear();
 
     switch (format) {
       case 'apa':
@@ -102,11 +86,42 @@ const ArticleView = () => {
         if (article.doi) citation += `,\n  doi = {${article.doi}}`;
         citation += '\n}';
         break;
+      case 'chicago':
+        citation = `${authors} "${article.title}." Journal of Pundra University of Science & Technology ${article.issue?.volume}, no. ${article.issue?.number} (${year}).`;
+        if (article.doi) citation += ` https://doi.org/${article.doi}`;
+        break;
     }
 
-    // Copy to clipboard
     navigator.clipboard.writeText(citation);
     alert(`${format.toUpperCase()} citation copied to clipboard!`);
+  };
+
+  const shareArticle = (platform) => {
+    const url = article.publicUrl || window.location.href;
+    const title = encodeURIComponent(article.title);
+    const shareUrl = article.doi 
+      ? `https://doi.org/${article.doi}` 
+      : url;
+
+    let shareLink = '';
+    switch (platform) {
+      case 'twitter':
+        shareLink = `https://twitter.com/intent/tweet?text=${title}&url=${encodeURIComponent(shareUrl)}`;
+        break;
+      case 'linkedin':
+        shareLink = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
+        break;
+      case 'facebook':
+        shareLink = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
+        break;
+      case 'email':
+        shareLink = `mailto:?subject=${title}&body=Check out this article: ${encodeURIComponent(shareUrl)}`;
+        break;
+    }
+
+    if (shareLink) {
+      window.open(shareLink, '_blank', 'width=600,height=400');
+    }
   };
 
   if (loading) return <Loading />;
@@ -116,264 +131,199 @@ const ArticleView = () => {
   return (
     <PublicLayout>
       <div className="article-view">
-        {/* Article Header */}
-        <Card className="article-header-card">
-          <div className="article-breadcrumb">
+        <div className="article-container">
+          {/* Breadcrumb */}
+          <div className="breadcrumb">
             <Link to="/">Home</Link>
-            <i className="fas fa-chevron-right"></i>
+            <span className="separator">/</span>
             <Link to="/search">Articles</Link>
-            <i className="fas fa-chevron-right"></i>
-            <span>{article.manuscriptId}</span>
+            <span className="separator">/</span>
+            <span className="current">{article.manuscriptId}</span>
           </div>
 
-          <h1 className="article-title">{article.title}</h1>
+          {/* Article Header */}
+          <Card className="article-header">
+            <div className="article-type-badge">Research Article</div>
+            <h1 className="article-title">{article.title}</h1>
 
-          {/* Authors */}
-          <div className="article-authors">
-            {article.authors?.map((author, index) => (
-              <span key={index} className="author-name">
-                {author.firstName} {author.lastName}
-                {author.orcid && (
+            {/* Authors */}
+            <div className="article-authors">
+              {article.authors?.map((author, index) => (
+                <span key={index} className="author-name">
+                  {author.firstName} {author.lastName}
+                  {author.isCorresponding && <sup>*</sup>}
+                  {index < article.authors.length - 1 && ', '}
+                </span>
+              ))}
+            </div>
+
+            {/* Affiliations */}
+            <div className="article-affiliations">
+              {Array.from(new Set(article.authors?.map(a => a.affiliation))).map((affiliation, index) => (
+                <div key={index} className="affiliation">
+                  <sup>{index + 1}</sup> {affiliation}
+                </div>
+              ))}
+              <div className="corresponding-author">
+                <sup>*</sup> Corresponding author
+              </div>
+            </div>
+
+            {/* Metadata */}
+            <div className="article-meta">
+              <div className="meta-item">
+                <i className="fas fa-calendar"></i>
+                <span>Published: {new Date(article.publishedDate || article.submittedAt).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}</span>
+              </div>
+              {article.doi && (
+                <div className="meta-item">
+                  <i className="fas fa-link"></i>
                   <a
-                    href={`https://orcid.org/${author.orcid}`}
+                    href={`https://doi.org/${article.doi}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="orcid-link"
-                    title="ORCID"
+                    className="doi-link"
                   >
-                    <i className="fab fa-orcid"></i>
+                    DOI: {article.doi}
                   </a>
-                )}
-                <sup>{index + 1}</sup>
-                {index < article.authors.length - 1 && ', '}
-              </span>
-            ))}
-          </div>
-
-          {/* Affiliations */}
-          <div className="article-affiliations">
-            {article.authors?.map((author, index) => (
-              author.affiliation && (
-                <p key={index}>
-                  <sup>{index + 1}</sup> {author.affiliation}
-                </p>
-              )
-            ))}
-          </div>
-
-          {/* Article Metadata */}
-          <div className="article-metadata">
-            {article.issue && (
-              <div className="meta-item">
-                <i className="fas fa-book"></i>
-                <span>Volume {article.issue.volume}, Issue {article.issue.number} ({article.issue.year})</span>
-              </div>
-            )}
-            <div className="meta-item">
-              <i className="fas fa-calendar"></i>
-              <span>Published: {new Date(article.publishedAt || article.submittedAt).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}</span>
-            </div>
-            {article.doi && (
-              <div className="meta-item">
-                <i className="fas fa-link"></i>
-                <a
-                  href={`https://doi.org/${article.doi}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="doi-link"
-                >
-                  DOI: {article.doi}
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="article-actions">
-            <button onClick={handleDownloadPDF} className="btn btn-primary">
-              <i className="fas fa-download"></i> Download PDF
-            </button>
-            <div className="citation-dropdown">
-              <button className="btn btn-outline">
-                <i className="fas fa-quote-right"></i> Cite This Article
-              </button>
-              <div className="citation-menu">
-                <button onClick={() => handleCitation('apa')}>APA</button>
-                <button onClick={() => handleCitation('mla')}>MLA</button>
-                <button onClick={() => handleCitation('bibtex')}>BibTeX</button>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <div className="article-content-grid">
-          {/* Left Column - Article Details */}
-          <div className="article-details">
-            {/* Abstract */}
-            <Card className="section-card">
-              <h2>Abstract</h2>
-              <p className="abstract-text">{article.abstract}</p>
-            </Card>
-
-            {/* Keywords */}
-            {article.keywords && article.keywords.length > 0 && (
-              <Card className="section-card">
-                <h2>Keywords</h2>
-                <div className="keywords-list">
-                  {article.keywords.map((keyword, index) => (
-                    <Link
-                      key={index}
-                      to={`/search?keyword=${encodeURIComponent(keyword)}`}
-                      className="keyword-tag"
-                    >
-                      {keyword}
-                    </Link>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            {/* PDF Viewer */}
-            <Card className="section-card pdf-section">
-              <div className="pdf-header">
-                <h2>Full Text</h2>
-                <div className="view-toggle">
-                  <button
-                    onClick={() => setViewMode('viewer')}
-                    className={`toggle-btn ${viewMode === 'viewer' ? 'active' : ''}`}
-                  >
-                    <i className="fas fa-eye"></i> View
-                  </button>
-                  <button
-                    onClick={handleDownloadPDF}
-                    className="toggle-btn"
-                  >
-                    <i className="fas fa-download"></i> Download
-                  </button>
-                </div>
-              </div>
-
-              {viewMode === 'viewer' && pdfUrl ? (
-                <div className="pdf-viewer-container">
-                  <iframe
-                    src={pdfUrl}
-                    title="Article PDF"
-                    className="pdf-iframe"
-                  />
-                </div>
-              ) : (
-                <div className="pdf-download-prompt">
-                  <i className="fas fa-file-pdf"></i>
-                  <h3>Download to Read</h3>
-                  <p>Click the button above to download the full article PDF</p>
                 </div>
               )}
-            </Card>
-
-            {/* Supplementary Files */}
-            {article.supplementaryFiles && article.supplementaryFiles.length > 0 && (
-              <Card className="section-card">
-                <h2>Supplementary Materials</h2>
-                <div className="supplementary-files">
-                  {article.supplementaryFiles.map((file, index) => (
-                    <div key={index} className="file-item">
-                      <i className="fas fa-file"></i>
-                      <div className="file-info">
-                        <h4>{file.filename}</h4>
-                        <span>{(file.size / 1024).toFixed(2)} KB</span>
-                      </div>
-                      <a
-                        href={`/api/public/files/${file.fileId}`}
-                        download
-                        className="btn btn-sm btn-outline"
-                      >
-                        <i className="fas fa-download"></i> Download
-                      </a>
-                    </div>
-                  ))}
+              {article.publicUrl && (
+                <div className="meta-item">
+                  <i className="fas fa-external-link-alt"></i>
+                  <a
+                    href={article.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="public-url-link"
+                  >
+                    Permanent Link
+                  </a>
                 </div>
-              </Card>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Right Sidebar - Article Info */}
-          <div className="article-sidebar">
-            {/* Article Metrics */}
-            <Card className="sidebar-card">
-              <h3>Article Metrics</h3>
-              <div className="metrics-list">
-                <div className="metric-item">
-                  <i className="fas fa-eye"></i>
-                  <div>
-                    <strong>Views</strong>
-                    <span>{article.views || 0}</span>
-                  </div>
-                </div>
-                <div className="metric-item">
-                  <i className="fas fa-download"></i>
-                  <div>
-                    <strong>Downloads</strong>
-                    <span>{article.downloads || 0}</span>
-                  </div>
+            {/* Action Buttons */}
+            <div className="article-actions">
+              <button onClick={handleDownloadPDF} className="btn btn-primary">
+                <i className="fas fa-download"></i> Download PDF
+              </button>
+              
+              <div className="citation-dropdown">
+                <button className="btn btn-outline">
+                  <i className="fas fa-quote-right"></i> Cite This Article
+                </button>
+                <div className="citation-menu">
+                  <button onClick={() => handleCitation('apa')}>
+                    <i className="fas fa-file-alt"></i> APA Format
+                  </button>
+                  <button onClick={() => handleCitation('mla')}>
+                    <i className="fas fa-file-alt"></i> MLA Format
+                  </button>
+                  <button onClick={() => handleCitation('chicago')}>
+                    <i className="fas fa-file-alt"></i> Chicago Format
+                  </button>
+                  <button onClick={() => handleCitation('bibtex')}>
+                    <i className="fas fa-code"></i> BibTeX
+                  </button>
                 </div>
               </div>
-            </Card>
 
-            {/* Issue Information */}
-            {article.issue && (
-              <Card className="sidebar-card">
-                <h3>Published In</h3>
-                <div className="issue-info">
-                  <p><strong>Volume {article.issue.volume}, Issue {article.issue.number}</strong></p>
-                  <p>{article.issue.title}</p>
-                  <p className="issue-year">{article.issue.year}</p>
-                  <Link to={`/issue/${article.issue._id}`} className="btn btn-sm btn-outline btn-block">
-                    <i className="fas fa-book"></i> View Issue
-                  </Link>
+              <div className="share-dropdown">
+                <button className="btn btn-outline">
+                  <i className="fas fa-share-alt"></i> Share
+                </button>
+                <div className="share-menu">
+                  <button onClick={() => shareArticle('twitter')}>
+                    <i className="fab fa-twitter"></i> Twitter
+                  </button>
+                  <button onClick={() => shareArticle('linkedin')}>
+                    <i className="fab fa-linkedin"></i> LinkedIn
+                  </button>
+                  <button onClick={() => shareArticle('facebook')}>
+                    <i className="fab fa-facebook"></i> Facebook
+                  </button>
+                  <button onClick={() => shareArticle('email')}>
+                    <i className="fas fa-envelope"></i> Email
+                  </button>
                 </div>
-              </Card>
-            )}
+              </div>
+            </div>
+          </Card>
 
-            {/* License */}
-            <Card className="sidebar-card">
-              <h3>Copyright & License</h3>
-              <p className="license-text">
-                Copyright © {new Date(article.publishedAt || article.submittedAt).getFullYear()} by the authors. 
-                This is an open access article distributed under the terms of the Creative Commons Attribution License.
-              </p>
-              <a
-                href="https://creativecommons.org/licenses/by/4.0/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="license-badge"
-              >
-                <i className="fab fa-creative-commons"></i> CC BY 4.0
-              </a>
-            </Card>
+          {/* Abstract */}
+          <Card className="article-section">
+            <h2>Abstract</h2>
+            <p className="abstract-text">{article.abstract}</p>
+          </Card>
 
-            {/* Share */}
-            <Card className="sidebar-card">
-              <h3>Share This Article</h3>
-              <div className="share-buttons">
-                <button className="share-btn twitter">
-                  <i className="fab fa-twitter"></i>
-                </button>
-                <button className="share-btn facebook">
-                  <i className="fab fa-facebook"></i>
-                </button>
-                <button className="share-btn linkedin">
-                  <i className="fab fa-linkedin"></i>
-                </button>
-                <button className="share-btn email">
-                  <i className="fas fa-envelope"></i>
-                </button>
+          {/* Keywords */}
+          {article.keywords && article.keywords.length > 0 && (
+            <Card className="article-section">
+              <h3>Keywords</h3>
+              <div className="keywords-list">
+                {article.keywords.map((keyword, index) => (
+                  <span key={index} className="keyword-tag">
+                    {keyword}
+                  </span>
+                ))}
               </div>
             </Card>
-          </div>
+          )}
+
+          {/* Article Info */}
+          <Card className="article-section">
+            <h3>Article Information</h3>
+            <div className="article-info-grid">
+              <div className="info-item">
+                <label>Manuscript ID</label>
+                <span>{article.manuscriptId}</span>
+              </div>
+              <div className="info-item">
+                <label>Submission Date</label>
+                <span>{new Date(article.submittedAt).toLocaleDateString()}</span>
+              </div>
+              <div className="info-item">
+                <label>Publication Date</label>
+                <span>{new Date(article.publishedDate || article.submittedAt).toLocaleDateString()}</span>
+              </div>
+              {article.doi && (
+                <div className="info-item">
+                  <label>DOI</label>
+                  <a href={`https://doi.org/${article.doi}`} target="_blank" rel="noopener noreferrer">
+                    {article.doi}
+                  </a>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Suggested Citation */}
+          <Card className="article-section citation-box">
+            <h3>How to Cite</h3>
+            <div className="citation-text">
+              {article.authors?.map(a => `${a.lastName}, ${a.firstName.charAt(0)}.`).join(', ')} (
+              {new Date(article.publishedDate || article.submittedAt).getFullYear()}). {article.title}. 
+              <em> Journal of Pundra University of Science & Technology</em>.
+              {article.doi && ` https://doi.org/${article.doi}`}
+            </div>
+            <button 
+              onClick={() => handleCitation('apa')} 
+              className="btn btn-sm btn-outline"
+            >
+              <i className="fas fa-copy"></i> Copy Citation
+            </button>
+          </Card>
+
+          {/* Related Articles (Future Enhancement) */}
+          <Card className="article-section">
+            <h3>Related Articles</h3>
+            <p className="text-muted">Related articles will appear here.</p>
+          </Card>
         </div>
       </div>
     </PublicLayout>
