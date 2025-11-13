@@ -7,7 +7,10 @@ const {
   deleteUser,
   getSystemStatistics,
   getAllManuscripts,
-  deleteManuscriptAdmin
+  deleteManuscriptAdmin,
+  getManuscriptRevisions,
+  getRevisionDetails,
+  compareRevisions
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/rbac');
@@ -30,5 +33,10 @@ router.delete('/users/:id', mongoIdValidation.param, validate, deleteUser);
 // Manuscript management
 router.get('/manuscripts', getAllManuscripts);
 router.delete('/manuscripts/:id', mongoIdValidation.param, validate, deleteManuscriptAdmin);
+
+// Manuscript revision management
+router.get('/manuscripts/:id/revisions', mongoIdValidation.param, validate, getManuscriptRevisions);
+router.get('/manuscripts/:id/revisions/:version', validate, getRevisionDetails);
+router.get('/manuscripts/:id/revisions/compare/:version1/:version2', validate, compareRevisions);
 
 module.exports = router;
