@@ -61,14 +61,15 @@ const MainLayout = () => {
     }
 
     if (hasRole('admin')) {
-      items.push(
-        { path: '/admin/dashboard', icon: <FaHome />, label: 'Admin Dashboard', role: 'admin' },
-        { path: '/admin/users', icon: <FaUsers />, label: 'User Management', role: 'admin' },
-        { path: '/admin/submissions', icon: <FaBook />, label: 'All Submissions', role: 'admin' },
-        { path: '/admin/analytics', icon: <FaChartBar />, label: 'Analytics', role: 'admin' },
-        { path: '/admin/settings', icon: <FaCog />, label: 'System Settings', role: 'admin' }
-      );
-    }
+  items.push(
+    { path: '/admin/dashboard', icon: <FaHome />, label: 'Admin Dashboard', role: 'admin' },
+    { path: '/admin/users', icon: <FaUsers />, label: 'User Management', role: 'admin' },
+    { path: '/admin/submissions', icon: <FaBook />, label: 'All Submissions', role: 'admin' },
+    { path: '/admin/doi/deposits', icon: <FaLink />, label: 'DOI Management', role: 'admin' }, // Add this
+    { path: '/admin/analytics', icon: <FaChartBar />, label: 'Analytics', role: 'admin' },
+    { path: '/admin/settings', icon: <FaCog />, label: 'System Settings', role: 'admin' }
+  );
+}
 
     return items;
   };
