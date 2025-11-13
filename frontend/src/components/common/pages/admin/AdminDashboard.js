@@ -418,6 +418,13 @@ const AdminDashboard = () => {
               <h3>View Analytics</h3>
               <p>Detailed reports & insights</p>
             </Link>
+          <Link to="/admin/doi/deposits" className="quick-action">
+  <div className="action-icon">
+    <i className="fas fa-link"></i>
+  </div>
+  <h3>DOI Management</h3>
+  <p>Monitor DOI deposit status</p>
+</Link>
           </div>
         </Card>
       </div>
