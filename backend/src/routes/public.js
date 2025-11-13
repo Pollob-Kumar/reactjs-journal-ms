@@ -3,9 +3,11 @@ const router = express.Router();
 const {
   searchArticles,
   getCurrentIssue,
-  getArchives,
-  getArticle,
-  getPublicStats
+  getArchivedIssues,
+  getArticleById,
+  getArticleByDoi,
+  downloadPublicArticle,
+  getArticleStats
 } = require('../controllers/publicController');
 const { getFileStream } = require('../config/gridfs');
 const Manuscript = require('../models/Manuscript');
@@ -63,5 +65,10 @@ router.get('/articles/:manuscriptId/download', async (req, res, next) => {
     next(error);
   }
 });
+
+// Public article access
+router.get('/articles/doi/:doi', getArticleByDoi);
+router.get('/articles/:manuscriptId/download', downloadPublicArticle);
+router.get('/articles/:manuscriptId/stats', getArticleStats);
 
 module.exports = router;
